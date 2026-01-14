@@ -137,7 +137,7 @@ def get_driver(user_agents, proxies, driver_path):
         
         return driver, proxy_ip, f"{width}x{height}"
     except Exception as e:
-        # print(f"Error Init Driver: {e}") # Debug only
+        print(f"Error Init Driver: {e}") # Debug only
         return None, None, None
 
 def worker(thread_id, urls, user_agents, proxies, driver_path):
