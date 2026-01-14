@@ -11,10 +11,10 @@ from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
 
 # --- KONFIGURASI ---
-MAX_THREADS = 15         
-PAGES_PER_THREAD = 20    
-MIN_DELAY = 5            
-MAX_DELAY = 8
+MAX_THREADS = 4         
+PAGES_PER_THREAD = 5    
+MIN_DELAY = 3            
+MAX_DELAY = 5
 
 # Daftar Resolusi
 RESOLUTIONS = [
