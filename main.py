@@ -9,14 +9,19 @@ from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
+
+# --- KONFIGURASI ---
 MAX_THREADS = 15         
 PAGES_PER_THREAD = 20    
 MIN_DELAY = 5            
 MAX_DELAY = 8
+
+# Daftar Resolusi
 RESOLUTIONS = [
     (1920, 1080), (1366, 768), (1536, 864), (1440, 900),  
     (1280, 720), (1600, 900), (360, 800), (390, 844)      
 ]
+
 def load_data(path_pattern, col_name):
     """Load data CSV dengan aman"""
     data_list = []
@@ -32,11 +37,9 @@ def load_data(path_pattern, col_name):
     unique = list(set(data_list))
     random.shuffle(unique)
     return unique
+
 def get_fingerprint_script():
-    """
-    Script JS untuk memalsukan Canvas Fingerprint.
-    Menambahkan sedikit noise pada fungsi toDataURL dan getImageData.
-    """
+    """Script JS untuk memalsukan Canvas Fingerprint."""
     return """
     (() => {
         const toBlob = HTMLCanvasElement.prototype.toBlob;
@@ -59,15 +62,21 @@ def get_fingerprint_script():
         };
     })();
     """
+
 def get_driver(user_agents, proxies, driver_path):
     options = Options()
+    
+    # Pilih resolusi acak
     width, height = random.choice(RESOLUTIONS)
+    
     options.add_argument("--headless=new")
     options.add_argument(f"--window-size={width},{height}")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-gpu")
     options.add_argument("--mute-audio")
+    
+    # Optimasi Speed (Block Gambar/CSS)
     prefs = {
         "profile.managed_default_content_settings.images": 2,      
         "profile.managed_default_content_settings.stylesheets": 2, 
@@ -77,26 +86,65 @@ def get_driver(user_agents, proxies, driver_path):
     }
     options.add_experimental_option("prefs", prefs)
     options.page_load_strategy = 'eager'
+    
+    # Stealth Mode
     options.add_argument("--disable-blink-features=AutomationControlled")
     options.add_experimental_option("excludeSwitches", ["enable-automation"])
     options.add_experimental_option('useAutomationExtension', False)
+    
     if user_agents:
         ua = random.choice(user_agents)
         options.add_argument(f'user-agent={ua}')
+        
     proxy_ip = None
     if proxies:
         proxy_ip = random.choice(proxies)
         options.add_argument(f'--proxy-server={proxy_ip}')
+
     try:
         service = Service(executable_path=driver_path)
         driver = webdriver.Chrome(service=service, options=options)
+        
+        # --- PERBAIKAN: INJEKSI SCRIPT ANTI-DETEKSI (CDP) ---
+        
+        # 1. Paksa Timezone Asia/Jakarta (Agar valid geo-location)
+        driver.execute_cdp_cmd("Emulation.setTimezoneOverride", {
+            "timezoneId": "Asia/Jakarta"
+        })
+
+        # 2. Inject Canvas Noise (Menggunakan fungsi get_fingerprint_script)
+        driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
+            "source": get_fingerprint_script()
+        })
+        
+        # 3. Inject Screen Resolution Override (Agar window.screen sinkron dengan headless size)
+        driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
+            "source": f"""
+                Object.defineProperty(window, 'screen', {{
+                    get: function() {{
+                        return {{
+                            width: {width},
+                            height: {height},
+                            availWidth: {width},
+                            availHeight: {height},
+                            colorDepth: 24,
+                            pixelDepth: 24
+                        }};
+                    }}
+                }});
+            """
+        })
+        
         return driver, proxy_ip, f"{width}x{height}"
     except Exception as e:
+        # print(f"Error Init Driver: {e}") # Debug only
         return None, None, None
+
 def worker(thread_id, urls, user_agents, proxies, driver_path):
     if not urls: return
     driver, current_proxy, res = get_driver(user_agents, proxies, driver_path)
     if not driver: return
+    
     try:
         driver.set_page_load_timeout(20) 
         for i in range(PAGES_PER_THREAD):
@@ -104,10 +152,18 @@ def worker(thread_id, urls, user_agents, proxies, driver_path):
             delay = random.uniform(MIN_DELAY, MAX_DELAY) 
             try:
                 driver.get(target_url)
+                
+                # Cek jika proxy mati/error page
+                if "chrome-error" in driver.current_url:
+                    print(f"[T-{thread_id}] Proxy Error. Skip.")
+                    break
+
+                # Scroll Cepat
                 driver.execute_script("window.scrollTo(0, 500);") 
                 time.sleep(1) 
                 driver.execute_script("window.scrollTo(0, 0);")
-                print(f"[T-{thread_id}] HIT! {target_url} | Proxy: {current_proxy}")
+                
+                print(f"[T-{thread_id}] HIT! {target_url[:30]}.. | {res} | Proxy: {current_proxy}")
                 time.sleep(delay)
             except Exception:
                 pass 
@@ -117,25 +173,34 @@ def worker(thread_id, urls, user_agents, proxies, driver_path):
         try:
             driver.quit()
         except: pass
+
 def main():
-    print("=== ADVANCED BOT TRAFFIC (FINGERPRINT SPOOFING) ===")
+    print("=== ADVANCED BOT TRAFFIC (FIXED & OPTIMIZED) ===")
     try:
         driver_path = ChromeDriverManager().install()
     except Exception as e:
         print(f"Driver Error: {e}")
         return
+        
     batch = 0
     while True:
         batch += 1
         print(f"\n--- BATCH #{batch} ---")
+        
         user_agents = load_data('./user_agent.csv', 'user_agent')
-        proxies = load_data('./proxy-aktif.csv', 'ip_address') 
+        proxies = load_data('./proxy_aktif.csv', 'ip_address') 
         urls = load_data('./sitemap/*.csv', 'sitemap')
+        
         if not urls:
+            print("[WAIT] Tidak ada URL. Menunggu...")
             time.sleep(30)
             continue
+            
         if not proxies:
-            print("[INFO] Tidak ada proxy. Menggunakan IP Server (Resiko terdeteksi tinggi).")
+            print("[INFO] Tidak ada proxy aktif! Menggunakan IP Server (Hati-hati).")
+        else:
+            print(f"[INFO] Loaded {len(proxies)} proxies, {len(urls)} URLs.")
+
         with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_THREADS) as executor:
             futures = []
             for i in range(MAX_THREADS):
@@ -143,8 +208,10 @@ def main():
                     executor.submit(worker, i+1, urls, user_agents, proxies, driver_path)
                 )
             concurrent.futures.wait(futures)
+            
         gc.collect() 
         time.sleep(2)
+
 if __name__ == "__main__":
     try:
         main()
