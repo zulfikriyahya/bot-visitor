@@ -188,7 +188,7 @@ def main():
         print(f"\n--- BATCH #{batch} ---")
         
         user_agents = load_data('./user_agent.csv', 'user_agent')
-        proxies = load_data('./proxy_aktif.csv', 'ip_address') 
+        proxies = load_data('./proxy-aktif.csv', 'ip_address') 
         urls = load_data('./sitemap/*.csv', 'sitemap')
         
         if not urls:
